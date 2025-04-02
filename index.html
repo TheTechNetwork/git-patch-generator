@@ -49,10 +49,8 @@
       let i = 0;
       while (i < lines.length) {
         if (lines[i].startsWith('@@')) {
-          // find lines immediately after the @@ chunk
           for (let j = i + 1; j < lines.length; j++) {
             if (lines[j].startsWith('@@') || lines[j].startsWith('diff --git')) break;
-
             if (j === lines.length - 1 || lines[j + 1].startsWith('@@') || lines[j + 1].startsWith('diff --git')) {
               if (lines[j].startsWith('-') && originalMissingNewline) {
                 lines.splice(j + 1, 0, '\\ No newline at end of file');
@@ -78,27 +76,31 @@
         return;
       }
 
-      const patchBody = Diff.createTwoFilesPatch(
-        fullPath, fullPath,
-        original, modified,
-        'original', 'modified',
-        { context: 3 }
-      );
-
       const oldHash = await sha1(original);
       const newHash = await sha1(modified);
       const indexLine = `index ${oldHash.slice(0, 7)}..${newHash.slice(0, 7)} 100644`;
 
-      const lines = patchBody.split('\n');
-      lines.splice(1, 0, indexLine);
+      // Create diff chunk only (strip unified diff header)
+      let diffChunk = Diff.createPatch(fullPath, original, modified, '', '');
+      const lines = diffChunk.split('\n');
+
+      // Remove Index: and === lines from top
+      lines.splice(0, 2);
+
+      // Replace file headers with git-style
+      lines[0] = `--- a/${fullPath}`;
+      lines[1] = `+++ b/${fullPath}`;
+
+      // Inject Git headers
+      lines.unshift(indexLine);
+      lines.unshift(`diff --git a/${fullPath} b/${fullPath}`);
 
       const originalMissingNewline = !original.endsWith('\n');
       const modifiedMissingNewline = !modified.endsWith('\n');
+      let patch = lines.join('\n');
+      patch = addNoNewlineMarkers(patch, originalMissingNewline, modifiedMissingNewline);
 
-      let patchWithMarkers = lines.join('\n');
-      patchWithMarkers = addNoNewlineMarkers(patchWithMarkers, originalMissingNewline, modifiedMissingNewline);
-
-      currentPatch = patchWithMarkers;
+      currentPatch = patch;
       document.getElementById('output').textContent = currentPatch;
     }
 
