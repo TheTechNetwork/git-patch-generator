@@ -44,6 +44,30 @@
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
+    function addNoNewlineMarkers(patch, originalMissingNewline, modifiedMissingNewline) {
+      const lines = patch.split('\n');
+      let i = 0;
+      while (i < lines.length) {
+        if (lines[i].startsWith('@@')) {
+          // find lines immediately after the @@ chunk
+          for (let j = i + 1; j < lines.length; j++) {
+            if (lines[j].startsWith('@@') || lines[j].startsWith('diff --git')) break;
+
+            if (j === lines.length - 1 || lines[j + 1].startsWith('@@') || lines[j + 1].startsWith('diff --git')) {
+              if (lines[j].startsWith('-') && originalMissingNewline) {
+                lines.splice(j + 1, 0, '\\ No newline at end of file');
+              } else if (lines[j].startsWith('+') && modifiedMissingNewline) {
+                lines.splice(j + 1, 0, '\\ No newline at end of file');
+              }
+              break;
+            }
+          }
+        }
+        i++;
+      }
+      return lines.join('\n');
+    }
+
     async function generateGitPatch() {
       const fullPath = document.getElementById('fullpath').value.trim().replace(/^\/|\/$/g, '');
       const original = document.getElementById('original').value;
@@ -67,8 +91,14 @@
 
       const lines = patchBody.split('\n');
       lines.splice(1, 0, indexLine);
-      currentPatch = lines.join('\n');
 
+      const originalMissingNewline = !original.endsWith('\n');
+      const modifiedMissingNewline = !modified.endsWith('\n');
+
+      let patchWithMarkers = lines.join('\n');
+      patchWithMarkers = addNoNewlineMarkers(patchWithMarkers, originalMissingNewline, modifiedMissingNewline);
+
+      currentPatch = patchWithMarkers;
       document.getElementById('output').textContent = currentPatch;
     }
 
