@@ -8,7 +8,7 @@
     textarea, input { width: 100%; margin-bottom: 1rem; font-family: monospace; }
     textarea { height: 150px; }
     pre { background: #f4f4f4; padding: 1rem; white-space: pre-wrap; word-wrap: break-word; }
-    button { padding: 0.5rem 1rem; margin-top: 0.5rem; }
+    button { padding: 0.5rem 1rem; margin-top: 0.5rem; margin-right: 0.5rem; }
   </style>
 </head>
 <body>
@@ -25,11 +25,18 @@
 
   <button onclick="generateGitPatch()">Generate Git Patch</button>
 
+  <div style="margin-top: 1.5rem;">
+    <button onclick="copyPatch()">Copy to Clipboard</button>
+    <button onclick="downloadPatch()">Download .patch</button>
+  </div>
+
   <h3>Generated Patch:</h3>
   <pre id="output"></pre>
 
   <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
   <script>
+    let currentPatch = '';
+
     async function sha1(text) {
       const buffer = new TextEncoder().encode(text);
       const hashBuffer = await crypto.subtle.digest('SHA-1', buffer);
@@ -59,10 +66,28 @@
       const indexLine = `index ${oldHash.slice(0, 7)}..${newHash.slice(0, 7)} 100644`;
 
       const lines = patchBody.split('\n');
-      lines.splice(1, 0, indexLine); // Insert index line after 'diff --git ...'
-      const patch = lines.join('\n');
+      lines.splice(1, 0, indexLine);
+      currentPatch = lines.join('\n');
 
-      document.getElementById('output').textContent = patch;
+      document.getElementById('output').textContent = currentPatch;
+    }
+
+    function copyPatch() {
+      if (!currentPatch) return;
+      navigator.clipboard.writeText(currentPatch).then(() => {
+        alert('Patch copied to clipboard!');
+      });
+    }
+
+    function downloadPatch() {
+      if (!currentPatch) return;
+      const blob = new Blob([currentPatch], { type: 'text/x-patch' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'change.patch';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   </script>
 </body>
