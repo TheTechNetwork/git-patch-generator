@@ -14,8 +14,8 @@
 <body>
   <h2>Git-Compatible Patch Generator</h2>
 
-  <label>Full File Path in Repo (e.g., src/installer/constants.cc):</label>
-  <input id="fullpath" type="text" placeholder="src/installer/constants.cc" />
+  <label>Full File Path in Repo (e.g., src/app.ts):</label>
+  <input id="fullpath" type="text" placeholder="src/app.ts" />
 
   <label>Original Text:</label>
   <textarea id="original" placeholder="Paste original file content here..."></textarea>
@@ -44,63 +44,58 @@
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    function addNoNewlineMarkers(patch, originalMissingNewline, modifiedMissingNewline) {
-      const lines = patch.split('\n');
-      let i = 0;
-      while (i < lines.length) {
-        if (lines[i].startsWith('@@')) {
-          for (let j = i + 1; j < lines.length; j++) {
-            if (lines[j].startsWith('@@') || lines[j].startsWith('diff --git')) break;
-            if (j === lines.length - 1 || lines[j + 1].startsWith('@@') || lines[j + 1].startsWith('diff --git')) {
-              if (lines[j].startsWith('-') && originalMissingNewline) {
-                lines.splice(j + 1, 0, '\\ No newline at end of file');
-              } else if (lines[j].startsWith('+') && modifiedMissingNewline) {
-                lines.splice(j + 1, 0, '\\ No newline at end of file');
-              }
-              break;
-            }
-          }
+    function buildHunk(diffs, context = 3) {
+      const hunkLines = [];
+      let oldStart = 1, newStart = 1;
+      let oldCount = 0, newCount = 0;
+      let leadingContext = [];
+
+      diffs.forEach(part => {
+        const lines = part.value.split('\n');
+        if (lines[lines.length - 1] === '') lines.pop(); // remove trailing empty
+
+        if (part.added) {
+          newCount += lines.length;
+          lines.forEach(line => hunkLines.push('+' + line));
+        } else if (part.removed) {
+          oldCount += lines.length;
+          lines.forEach(line => hunkLines.push('-' + line));
+        } else {
+          oldStart += lines.length;
+          newStart += lines.length;
+          lines.forEach(line => hunkLines.push(' ' + line));
         }
-        i++;
-      }
-      return lines.join('\n');
+      });
+
+      const header = `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`;
+      return [header, ...hunkLines].join('\n');
     }
 
     async function generateGitPatch() {
-      const fullPath = document.getElementById('fullpath').value.trim().replace(/^\/|\/$/g, '');
+      const fullPath = document.getElementById('fullpath').value.trim();
       const original = document.getElementById('original').value;
       const modified = document.getElementById('modified').value;
 
       if (!fullPath) {
-        alert('Please enter a full file path (e.g., src/installer/constants.cc).');
+        alert('Please enter a full file path.');
         return;
       }
 
+      const diffParts = Diff.diffLines(original, modified);
       const oldHash = await sha1(original);
       const newHash = await sha1(modified);
       const indexLine = `index ${oldHash.slice(0, 7)}..${newHash.slice(0, 7)} 100644`;
 
-      // Create diff chunk only (strip unified diff header)
-      let diffChunk = Diff.createPatch(fullPath, original, modified, '', '');
-      const lines = diffChunk.split('\n');
+      const patchHeader = [
+        `diff --git a/${fullPath} b/${fullPath}`,
+        indexLine,
+        `--- a/${fullPath}`,
+        `+++ b/${fullPath}`,
+      ];
 
-      // Remove Index: and === lines from top
-      lines.splice(0, 2);
+      const patchBody = buildHunk(diffParts);
 
-      // Replace file headers with git-style
-      lines[0] = `--- a/${fullPath}`;
-      lines[1] = `+++ b/${fullPath}`;
-
-      // Inject Git headers
-      lines.unshift(indexLine);
-      lines.unshift(`diff --git a/${fullPath} b/${fullPath}`);
-
-      const originalMissingNewline = !original.endsWith('\n');
-      const modifiedMissingNewline = !modified.endsWith('\n');
-      let patch = lines.join('\n');
-      patch = addNoNewlineMarkers(patch, originalMissingNewline, modifiedMissingNewline);
-
-      currentPatch = patch;
+      currentPatch = [...patchHeader, patchBody].join('\n');
       document.getElementById('output').textContent = currentPatch;
     }
 
