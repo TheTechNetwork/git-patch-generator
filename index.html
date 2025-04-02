@@ -5,7 +5,8 @@
   <title>Git-Compatible Patch Generator</title>
   <style>
     body { font-family: sans-serif; margin: 2rem; }
-    textarea { width: 100%; height: 150px; margin-bottom: 1rem; }
+    textarea, input { width: 100%; margin-bottom: 1rem; font-family: monospace; }
+    textarea { height: 150px; }
     pre { background: #f4f4f4; padding: 1rem; white-space: pre-wrap; word-wrap: break-word; }
     button { padding: 0.5rem 1rem; margin-top: 0.5rem; }
   </style>
@@ -13,14 +14,14 @@
 <body>
   <h2>Git-Compatible Patch Generator</h2>
 
-  <label>File Name (e.g., src/constants.cc):</label>
-  <input id="filename" type="text" style="width: 100%; margin-bottom: 1rem;" />
+  <label>Full File Path in Repo (e.g., src/installer/constants.cc):</label>
+  <input id="fullpath" type="text" placeholder="src/installer/constants.cc" />
 
   <label>Original Text:</label>
-  <textarea id="original"></textarea>
+  <textarea id="original" placeholder="Paste original file content here..."></textarea>
 
   <label>Modified Text:</label>
-  <textarea id="modified"></textarea>
+  <textarea id="modified" placeholder="Paste modified file content here..."></textarea>
 
   <button onclick="generateGitPatch()">Generate Git Patch</button>
 
@@ -29,20 +30,37 @@
 
   <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
   <script>
-    function generateGitPatch() {
-      const fileName = document.getElementById('filename').value || 'file.txt';
+    async function sha1(text) {
+      const buffer = new TextEncoder().encode(text);
+      const hashBuffer = await crypto.subtle.digest('SHA-1', buffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function generateGitPatch() {
+      const fullPath = document.getElementById('fullpath').value.trim().replace(/^\/|\/$/g, '');
       const original = document.getElementById('original').value;
       const modified = document.getElementById('modified').value;
 
-      const patch = Diff.createTwoFilesPatch(
-        fileName,
-        fileName,
-        original,
-        modified,
-        'original',
-        'modified',
+      if (!fullPath) {
+        alert('Please enter a full file path (e.g., src/installer/constants.cc).');
+        return;
+      }
+
+      const patchBody = Diff.createTwoFilesPatch(
+        fullPath, fullPath,
+        original, modified,
+        'original', 'modified',
         { context: 3 }
       );
+
+      const oldHash = await sha1(original);
+      const newHash = await sha1(modified);
+      const indexLine = `index ${oldHash.slice(0, 7)}..${newHash.slice(0, 7)} 100644`;
+
+      const lines = patchBody.split('\n');
+      lines.splice(1, 0, indexLine); // Insert index line after 'diff --git ...'
+      const patch = lines.join('\n');
 
       document.getElementById('output').textContent = patch;
     }
